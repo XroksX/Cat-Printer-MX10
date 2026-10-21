@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cat Printer</title>
+<style>
+  body{font-family:system-ui,sans-serif;max-width:720px;margin:24px auto;padding:0 16px;background:#fafafa;color:#222}
+  h1{font-size:22px;margin:0 0 16px}
+  h3{font-size:15px;margin:18px 0 6px}
+  .card{background:#fff;border:1px solid #ddd;border-radius:10px;padding:16px;margin-bottom:16px}
+  button{padding:8px 14px;border-radius:6px;border:1px solid #888;background:#fff;cursor:pointer;margin-right:6px;font-size:14px}
+  button.primary{background:#2563eb;color:#fff;border-color:#2563eb}
+  button:disabled{opacity:.5;cursor:default}
+  label{display:block;margin:8px 0 4px;font-size:14px}
+  input[type=text],input[type=number],textarea,select{padding:8px;box-sizing:border-box;font-size:15px;border:1px solid #bbb;border-radius:6px;font-family:inherit}
+  .full{width:100%}
+  .row{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:12px}
+  #preview{width:100%;max-width:384px;border:1px solid #ccc;background:#fff;display:block;margin-top:12px;image-rendering:pixelated}
+  #log{font-family:monospace;font-size:12px;background:#111;color:#4ade80;padding:8px;height:140px;overflow:auto;border-radius:6px;white-space:pre-wrap}
+  .warn{font-size:13px;color:#92400e;background:#fef3c7;padding:8px;border-radius:6px}
+  .hint{font-size:12px;color:#666;margin:6px 0 0}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid #ddd;margin-bottom:12px}
+  .tab{border:none;border-bottom:3px solid transparent;border-radius:0;background:none;padding:10px 16px;font-weight:600;color:#555;margin:0}
+  .tab.active{color:#2563eb;border-bottom-color:#2563eb}
+  .seg{display:flex;gap:8px}
+  .seg button{flex:1;margin:0;padding:10px}
+  .seg button.active{border-color:#16a34a;background:#ecfdf5;color:#15803d;font-weight:600}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .two input,.item input{width:100%}
+  .item{display:grid;grid-template-columns:1fr 64px 90px 36px;gap:8px;margin-bottom:8px}
+  .item button{margin:0;padding:0;color:#dc2626;border-color:#fca5a5;background:#fef2f2;font-size:18px}
+  #r-add{width:100%;border:1px dashed #16a34a;background:#ecfdf5;color:#15803d;margin:0}
+  [hidden]{display:none !important}
+</style>
+</head>
+<body>
+<h1>🐱 Cat Printer</h1>
+
+<div class="card">
+  <button id="connect" class="primary">Connect printer</button>
+  <span id="status">Not connected</span>
+  <p class="warn">Use Chrome or Edge on desktop or Android. Web Bluetooth doesn't work in Firefox or Safari. Open this file directly from your Downloads folder, not from a chat preview.</p>
+</div>
+
+<div class="card">
+  <div class="tabs">
+    <button class="tab active" data-tab="text">Text</button>
+    <button class="tab" data-tab="image">Image</button>
+    <button class="tab" data-tab="receipt">Receipt</button>
+  </div>
+
+  <!-- TEXT -->
+  <div id="panel-text">
+    <label for="text">Text to print</label>
+    <input type="text" id="text" class="full" value="Hello cat!">
+  </div>
+
+  <!-- IMAGE -->
+  <div id="panel-image" hidden>
+    <label for="file">Choose an image</label>
+    <input type="file" id="file" accept="image/*">
+    <button id="clearImage" type="button">Clear image</button>
+    <div class="row">
+      <label style="margin:0">Dither
+        <select id="dither">
+          <option value="floyd">Floyd-Steinberg (photos)</option>
+          <option value="threshold">Threshold (line art)</option>
+        </select>
+      </label>
+      <label style="margin:0"><input type="checkbox" id="invert"> Invert</label>
+    </div>
+  </div>
+
+  <!-- RECEIPT -->
+  <div id="panel-receipt" hidden>
+    <div class="seg">
+      <button type="button" class="active" data-w="58">58mm</button>
+      <button type="button" data-w="80">80mm</button>
+    </div>
+    <p class="hint">The printer's head is 384 dots wide (58mm). 80mm fits more characters per line and is scaled down to fit, so its text is smaller.</p>
+
+    <h3>Shop details</h3>
+    <label for="r-shop">Shop / business name</label>
+    <input type="text" id="r-shop" class="full" value="My Shop">
+    <div class="two">
+      <div><label for="r-address">Address (optional)</label><input type="text" id="r-address"></div>
+      <div><label for="r-phone">Phone (optional)</label><input type="text" id="r-phone"></div>
+    </div>
+    <label for="r-customer">Customer name (optional)</label>
+    <input type="text" id="r-customer" class="full">
+
+    <h3>Items <span style="font-weight:normal;color:#888;font-size:12px">Name / Qty / Price</span></h3>
+    <div id="r-items"></div>
+    <button type="button" id="r-add">+ Add item</button>
+
+    <h3>Tax &amp; note</h3>
+    <div class="two">
+      <div><label for="r-tax">Tax (%)</label><input type="number" id="r-tax" min="0" step="any" value="0"></div>
+      <div><label for="r-discount">Discount</label><input type="number" id="r-discount" min="0" step="any" value="0"></div>
+    </div>
+    <label for="r-footer">Footer note</label>
+    <textarea id="r-footer" class="full" rows="2">Thank you! Visit again.</textarea>
+  </div>
+</div>
+
+<div class="card">
+  <div class="row" style="margin-top:0">
+    <label style="margin:0">Power: <span id="energyValue">24000</span>
+      <input type="range" id="energy" min="16000" max="50000" step="1000" value="24000">
+    </label>
+    <label style="margin:0">Speed: <span id="speedValue">32</span>
+      <input type="range" id="speed" min="8" max="64" step="1" value="32">
+    </label>
+    <label style="margin:0">Height stretch: <span id="stretchValue">1.00</span>x
+      <input type="range" id="stretch" min="0.5" max="3" step="0.05" value="1">
+    </label>
+  </div>
+
+  <canvas id="preview" width="384" height="40"></canvas>
+
+  <div class="row">
+    <button id="print" class="primary" disabled>Print</button>
+    <button id="download">Download PNG</button>
+  </div>
+
+  <div class="row">
+    <label style="margin:0">Feed lines
+      <input type="number" id="feedLines" min="1" max="500" value="50" style="width:90px;padding:6px">
+    </label>
+    <button id="feed" disabled>Feed</button>
+    <label style="margin:0">Retract lines
+      <input type="number" id="retractLines" min="1" max="500" value="50" style="width:90px;padding:6px">
+    </label>
+    <button id="retract" disabled>Retract</button>
+  </div>
+</div>
+
+<div class="card"><div id="log"></div></div>
+
+<script>
+// ---- Protocol (matches the opuu/cat-printer library's dist/cat-printer.js) ----
+const PRINT_SERVICE = 0xAE30;
+const TX_CHAR = 0xAE01;     // we write here
+const RX_CHAR = 0xAE02;     // printer replies here
+const FILTER_SERVICE = 0xAF30;
+const WIDTH = 384;
+const BYTES_PER_ROW = WIDTH / 8;
+const CMD = { RETRACT: 0xA0, FEED: 0xA1, BITMAP: 0xA2, STATE: 0xA3, ENERGY: 0xAF, SPEED: 0xBD, APPLY_ENERGY: 0xBE };
+
+let tx = null, rx = null, device = null;
+
+const $ = id => document.getElementById(id);
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v | 0));
+function log(msg){ const el = $('log'); el.textContent += msg + '\n'; el.scrollTop = el.scrollHeight; }
+
+function crc8(bytes){
+  let c = 0;
+  for (const b of bytes){
+    c ^= b;
+    for (let i = 0; i < 8; i++) c = (c & 0x80) ? ((c << 1) ^ 0x07) & 0xFF : (c << 1) & 0xFF;
+  }
+  return c;
+}
+
+// Packet: 0x51 0x78 cmd 0x00 lenLo lenHi payload... crc8(payload) 0xFF
+function makeCommand(cmd, payload = []){
+  return new Uint8Array([0x51, 0x78, cmd, 0x00, payload.length & 0xFF, payload.length >> 8, ...payload, crc8(payload), 0xFF]);
+}
+
+async function write(bytes){
+  if (!tx) throw new Error('Printer not connected');
+  await tx.writeValueWithoutResponse(bytes);
+}
+
+function energyBytes(v){ return [v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF, (v >> 24) & 0xFF]; }
+
+async function applySettings(){
+  const speed = clamp($('speed').value, 8, 64);
+  const energy = clamp($('energy').value, 16000, 50000);
+  await write(makeCommand(CMD.SPEED, [speed]));
+  await write(makeCommand(CMD.ENERGY, energyBytes(energy)));
+  await write(makeCommand(CMD.APPLY_ENERGY, [1]));
+}
+
+// ---- Connection ----
+$('connect').onclick = async () => {
+  try {
+    if (!navigator.bluetooth) throw new Error('Web Bluetooth not available in this browser');
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [FILTER_SERVICE] }],
+      optionalServices: [PRINT_SERVICE]
+    });
+    log('Connecting to ' + (device.name || 'printer') + '...');
+    device.addEventListener('gattserverdisconnected', () => {
+      tx = rx = null;
+      $('status').textContent = 'Disconnected';
+      $('print').disabled = $('feed').disabled = $('retract').disabled = true;
+      log('Disconnected');
+    });
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(PRINT_SERVICE);
+    tx = await service.getCharacteristic(TX_CHAR);
+    rx = await service.getCharacteristic(RX_CHAR);
+    await rx.startNotifications();
+    rx.addEventListener('characteristicvaluechanged', e => {
+      const b = new Uint8Array(e.target.value.buffer);
+      log('Printer: ' + Array.from(b, x => x.toString(16).padStart(2, '0')).join(' '));
+    });
+    await applySettings();
+    $('status').textContent = 'Connected: ' + (device.name || 'printer');
+    $('print').disabled = $('feed').disabled = $('retract').disabled = false;
+    log('Connected and prepared');
+  } catch (e) {
+    log('Connect failed: ' + e.message);
+  }
+};
+
+$('speed').addEventListener('input', e => { $('speedValue').textContent = e.target.value; });
+$('energy').addEventListener('input', e => { $('energyValue').textContent = e.target.value; });
+$('speed').addEventListener('change', () => { if (tx) applySettings().catch(e => log('Speed error: ' + e.message)); });
+$('energy').addEventListener('change', () => { if (tx) applySettings().catch(e => log('Power error: ' + e.message)); });
+
+// ---- Tabs: each tab keeps its own content, so switching never loses anything ----
+let activeTab = 'text';
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.onclick = () => {
+    activeTab = btn.dataset.tab;
+    document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b === btn));
+    ['text', 'image', 'receipt'].forEach(t => { $('panel-' + t).hidden = (t !== activeTab); });
+    updatePreview();
+  };
+});
+
+// ---- Text source ----
+function wrapText(ctx, text, maxW){
+  const out = [];
+  for (const para of String(text).split('\n')){
+    let line = '';
+    for (const word of para.split(' ')){
+      const test = line ? line + ' ' + word : word;
+      if (ctx.measureText(test).width <= maxW){ line = test; continue; }
+      if (line){ out.push(line); line = ''; }
+      let chunk = '';                       // a single word wider than the line: split by character
+      for (const ch of word){
+        if (ctx.measureText(chunk + ch).width > maxW && chunk){ out.push(chunk); chunk = ch; }
+        else chunk += ch;
+      }
+      line = chunk;
+    }
+    out.push(line);
+  }
+  return out;
+}
+
+function renderText(text){
+  const c = document.createElement('canvas');
+  c.width = WIDTH;
+  const ctx = c.getContext('2d');
+  const font = 'bold 44px system-ui, sans-serif';
+  ctx.font = font;
+  const lines = wrapText(ctx, text.trim() || ' ', WIDTH - 20);
+  const lh = 54;
+  c.height = Math.max(40, lines.length * lh + 30);
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+  ctx.fillStyle = '#000'; ctx.font = font; ctx.textBaseline = 'top';
+  lines.forEach((l, i) => ctx.fillText(l, 10, 12 + i * lh));
+  return c;
+}
+
+// ---- Image source: shrink in halving steps for a sharper result ----
+let imageCanvas = null;
+
+function renderImage(img){
+  const targetW = WIDTH;
+  const targetH = Math.round(img.height * (WIDTH / img.width));
+  let src = img, sw = img.width, sh = img.height;
+  while (sw / 2 >= targetW){
+    const c = document.createElement('canvas');
+    c.width = Math.round(sw / 2);
+    c.height = Math.round(sh / 2);
+    const x = c.getContext('2d');
+    x.imageSmoothingEnabled = true;
+    x.imageSmoothingQuality = 'high';
+    x.drawImage(src, 0, 0, c.width, c.height);
+    src = c; sw = c.width; sh = c.height;
+  }
+  const c = document.createElement('canvas');
+  c.width = targetW;
+  c.height = targetH;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(src, 0, 0, targetW, targetH);
+  return c;
+}
+
+$('file').onchange = () => {
+  const f = $('file').files[0];
+  if (!f) { imageCanvas = null; updatePreview(); return; }
+  const url = URL.createObjectURL(f);
+  const img = new Image();
+  img.onload = () => { imageCanvas = renderImage(img); URL.revokeObjectURL(url); updatePreview(); };
+  img.onerror = () => { log('Could not read that image'); imageCanvas = null; updatePreview(); };
+  img.src = url;
+};
+$('clearImage').onclick = () => { $('file').value = ''; imageCanvas = null; updatePreview(); };
+
+// ---- Receipt source ----
+let receiptWidth = 58;                       // 58 -> 384px canvas, 80 -> 576px canvas (scaled down on output)
+const receiptItems = [{ name: 'Item', qty: 1, price: 100 }];
+
+function renderItemRows(){
+  const box = $('r-items');
+  box.innerHTML = '';
+  receiptItems.forEach((it, i) => {
+    const row = document.createElement('div');
+    row.className = 'item';
+    const n = document.createElement('input');
+    n.type = 'text'; n.placeholder = 'Item name'; n.value = it.name;
+    n.oninput = () => { it.name = n.value; };
+    const q = document.createElement('input');
+    q.type = 'number'; q.min = '0'; q.step = 'any'; q.value = it.qty;
+    q.oninput = () => { it.qty = parseFloat(q.value) || 0; };
+    const p = document.createElement('input');
+    p.type = 'number'; p.min = '0'; p.step = 'any'; p.value = it.price;
+    p.oninput = () => { it.price = parseFloat(p.value) || 0; };
+    const x = document.createElement('button');
+    x.type = 'button'; x.textContent = '×'; x.title = 'Remove item';
+    x.onclick = () => { receiptItems.splice(i, 1); renderItemRows(); updatePreview(); };
+    row.append(n, q, p, x);
+    box.appendChild(row);
+  });
+}
+$('r-add').onclick = () => { receiptItems.push({ name: '', qty: 1, price: 0 }); renderItemRows(); updatePreview(); };
+
+document.querySelectorAll('.seg button').forEach(btn => {
+  btn.onclick = () => {
+    receiptWidth = Number(btn.dataset.w);
+    document.querySelectorAll('.seg button').forEach(b => b.classList.toggle('active', b === btn));
+    updatePreview();
+  };
+});
+$('panel-receipt').addEventListener('input', updatePreview);
+
+function renderReceipt(){
+  const W = receiptWidth === 80 ? 576 : 384;
+  const pad = 10, fs = 20;
+  const num = id => parseFloat($(id).value) || 0;
+  const money = v => v.toFixed(2);
+  const qtyText = q => (q % 1 === 0 ? String(q) : q.toFixed(2));
+  const items = receiptItems.filter(it => it.name.trim() || it.price);
+  const footer = $('r-footer').value.trim();
+
+  const tall = 800 + items.length * 160 + (footer.split('\n').length + 4) * 70;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = tall;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, tall);
+  ctx.fillStyle = '#000'; ctx.strokeStyle = '#000'; ctx.textBaseline = 'top';
+  let y = 12;
+
+  const setFont = (weight, size) => { ctx.font = `${weight} ${size}px "Courier New", Courier, monospace`; };
+  const centered = (text, weight, size) => {
+    setFont(weight, size);
+    ctx.textAlign = 'center';
+    for (const l of wrapText(ctx, text, W - pad * 2)){ ctx.fillText(l, W / 2, y); y += size + 6; }
+  };
+  const dashed = () => {
+    ctx.setLineDash([6, 4]); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(pad, y + 8); ctx.lineTo(W - pad, y + 8); ctx.stroke();
+    ctx.setLineDash([]); y += 20;
+  };
+  const row = (left, right, weight = 'normal', size = fs) => {
+    setFont(weight, size);
+    ctx.textAlign = 'right';
+    const rw = ctx.measureText(right).width;
+    const lines = wrapText(ctx, left, W - pad * 2 - rw - 12);
+    ctx.textAlign = 'left';
+    lines.forEach((l, i) => ctx.fillText(l, pad, y + i * (size + 6)));
+    ctx.textAlign = 'right';
+    ctx.fillText(right, W - pad, y);
+    y += lines.length * (size + 6);
+  };
+
+  // Header
+  if ($('r-shop').value.trim()) centered($('r-shop').value.trim(), 'bold', 30);
+  if ($('r-address').value.trim()) centered($('r-address').value.trim(), 'normal', 18);
+  if ($('r-phone').value.trim()) centered($('r-phone').value.trim(), 'normal', 18);
+  y += 4; dashed();
+
+  // Date and customer
+  const d = new Date();
+  const when = d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) + ' ' +
+               d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  row('Date', when);
+  if ($('r-customer').value.trim()) row('Customer', $('r-customer').value.trim());
+  dashed();
+
+  // Items
+  row('ITEM', 'PRICE', 'bold');
+  dashed();
+  let subtotal = 0;
+  for (const it of items){
+    const line = it.qty * it.price;
+    subtotal += line;
+    row(it.name.trim() || 'Item', money(line));
+    setFont('normal', 16);
+    ctx.textAlign = 'left';
+    ctx.fillText(`  ${qtyText(it.qty)} x ${money(it.price)}`, pad, y);
+    y += 24;
+  }
+  dashed();
+
+  // Totals
+  const tax = subtotal * num('r-tax') / 100;
+  const discount = num('r-discount');
+  const total = subtotal + tax - discount;
+  if (tax || discount){
+    row('Subtotal', money(subtotal));
+    if (tax) row(`Tax (${num('r-tax')}%)`, money(tax));
+    if (discount) row('Discount', '-' + money(discount));
+    dashed();
+  }
+  row('TOTAL', money(total), 'bold', 28);
+  y += 4; dashed();
+
+  // Footer
+  if (footer) centered(footer, 'normal', 18);
+  y += 24;
+
+  // Crop to the drawn height
+  const out = document.createElement('canvas');
+  out.width = W; out.height = Math.ceil(y);
+  out.getContext('2d').drawImage(c, 0, 0);
+  return W === WIDTH ? out : renderImage(out);   // 80mm layout is scaled down to the 384-dot head
+}
+
+// ---- Choose the source for the active tab ----
+function currentSource(){
+  if (activeTab === 'text') return renderText($('text').value);
+  if (activeTab === 'image') return imageCanvas;           // null until an image is chosen
+  return renderReceipt();
+}
+
+// ---- Bitmap: 1 = black, LSB-first within each byte (as the library packs it) ----
+function toRows(canvas, ditherMode, invert){
+  const ctx = canvas.getContext('2d');
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const h = canvas.height;
+  const gray = new Float32Array(WIDTH * h);
+  for (let i = 0; i < WIDTH * h; i++){
+    const p = i * 4, a = data[p + 3] / 255;
+    gray[i] = (0.299 * data[p] + 0.587 * data[p + 1] + 0.114 * data[p + 2]) * a + 255 * (1 - a);
+  }
+  const black = new Uint8Array(WIDTH * h);
+  if (ditherMode === 'floyd'){
+    for (let y = 0; y < h; y++) for (let x = 0; x < WIDTH; x++){
+      const i = y * WIDTH + x, old = gray[i], nw = old < 128 ? 0 : 255, err = old - nw;
+      black[i] = nw === 0 ? 1 : 0;
+      if (x + 1 < WIDTH) gray[i + 1] += err * 7 / 16;
+      if (y + 1 < h){
+        if (x > 0) gray[i + WIDTH - 1] += err * 3 / 16;
+        gray[i + WIDTH] += err * 5 / 16;
+        if (x + 1 < WIDTH) gray[i + WIDTH + 1] += err / 16;
+      }
+    }
+  } else {
+    for (let i = 0; i < WIDTH * h; i++) black[i] = gray[i] < 128 ? 1 : 0;
+  }
+  if (invert) for (let i = 0; i < black.length; i++) black[i] ^= 1;
+
+  const rows = [];
+  for (let y = 0; y < h; y++){
+    const row = new Uint8Array(BYTES_PER_ROW);
+    for (let x = 0; x < WIDTH; x++) if (black[y * WIDTH + x]) row[x >> 3] |= (1 << (x & 7));
+    rows.push(row);
+  }
+  return rows;
+}
+
+// Text and receipts use a hard threshold (crisp letters); images use the dither controls
+function getRows(){
+  const src = currentSource();
+  if (!src) return null;
+  const isImage = activeTab === 'image';
+  const rows = toRows(src, isImage ? $('dither').value : 'threshold', isImage && $('invert').checked);
+  const f = parseFloat($('stretch').value) || 1;
+  if (f === 1) return rows;
+  const out = [];
+  const n = Math.round(rows.length * f);
+  for (let j = 0; j < n; j++) out.push(rows[Math.min(rows.length - 1, Math.floor(j / f))]);
+  return out;
+}
+
+$('stretch').addEventListener('input', e => {
+  $('stretchValue').textContent = parseFloat(e.target.value).toFixed(2);
+  updatePreview();
+});
+['dither', 'invert'].forEach(id => $(id).addEventListener('change', updatePreview));
+$('text').addEventListener('input', updatePreview);
+
+function updatePreview(){
+  const rows = getRows();
+  const pv = $('preview');
+  const ctx = pv.getContext('2d');
+  if (!rows){                                   // image tab with nothing chosen
+    pv.width = WIDTH; pv.height = 40;
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, WIDTH, 40);
+    ctx.fillStyle = '#999'; ctx.font = '14px system-ui'; ctx.textBaseline = 'middle';
+    ctx.fillText('No image chosen', 10, 20);
+    return;
+  }
+  pv.width = WIDTH; pv.height = rows.length;
+  const img = ctx.createImageData(WIDTH, rows.length);
+  for (let y = 0; y < rows.length; y++) for (let x = 0; x < WIDTH; x++){
+    const bit = (rows[y][x >> 3] >> (x & 7)) & 1, v = bit ? 0 : 255, p = (y * WIDTH + x) * 4;
+    img.data[p] = img.data[p + 1] = img.data[p + 2] = v; img.data[p + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+// ---- Print ----
+$('print').onclick = async () => {
+  const rows = getRows();
+  if (!rows){ log('Choose an image first'); return; }
+  $('print').disabled = true;
+  try {
+    log(`Printing ${rows.length} rows...`);
+    await applySettings();
+    for (const row of rows) await write(makeCommand(CMD.BITMAP, Array.from(row)));
+    // Finish: slow down, feed 100 lines so the print clears the cutter
+    await write(makeCommand(CMD.SPEED, [8]));
+    await write(makeCommand(CMD.FEED, [100, 0]));
+    log('Done.');
+  } catch (e) {
+    log('Print failed: ' + e.message);
+  } finally {
+    $('print').disabled = !tx;
+  }
+};
+
+$('download').onclick = () => {
+  const src = currentSource();
+  if (!src){ log('Nothing to download yet'); return; }
+  src.toBlob(b => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(b);
+    a.download = activeTab + '.png';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+};
+
+$('feed').onclick = async () => {
+  try {
+    const n = clamp($('feedLines').value, 1, 500);
+    await write(makeCommand(CMD.FEED, [n & 0xFF, n >> 8]));
+    log(`Fed ${n} lines`);
+  } catch (e) { log('Feed failed: ' + e.message); }
+};
+$('retract').onclick = async () => {
+  try {
+    const n = clamp($('retractLines').value, 1, 500);
+    await write(makeCommand(CMD.RETRACT, [n & 0xFF, n >> 8]));
+    log(`Retracted ${n} lines`);
+  } catch (e) { log('Retract failed: ' + e.message); }
+};
+
+renderItemRows();
+updatePreview();
+</script>
+</body>
+</html>
